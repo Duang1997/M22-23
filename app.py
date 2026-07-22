@@ -1,6 +1,7 @@
 import os
+import subprocess
 import streamlit as st
-from docx.shared import Inches
+from docx.shared import Cm
 from docxtpl import DocxTemplate, InlineImage
 from PIL import Image
 
@@ -24,7 +25,7 @@ with col2:
 
 st.markdown("---")
 
-# ส่วนที่ 2: บันทึกภาพถ่าย 4 ด้าน (บน 2 / ล่าง 2)
+# ส่วนที่ 2: บันทึกภาพถ่าย 4 ด้าน
 st.subheader("2. บันทึกภาพถ่าย 4 ด้าน")
 angles = {
     "pic_front": "ภาพหน้าตรง (pic_front)",
@@ -53,15 +54,14 @@ for key, label in angles.items():
   st.markdown("---")
 
 
-# ฟังก์ชันสร้างเอกสารผ่าน Template (แก้ไขจุดแปลงโหมดภาพ RGB ป้องกัน OSError)
-def generate_report_from_template(nid, fname, lname, images):
+# ฟังก์ชันสร้างไฟล์ Word และแปลงเป็น PDF
+def generate_files_word_and_pdf(nid, fname, lname, images):
   template_path = "template.docx"
   if not os.path.exists(template_path):
     st.error("ไม่พบไฟล์ template.docx ในระบบ กรุณาอัปโหลดไฟล์ Template")
-    return None
+    return None, None
 
   doc = DocxTemplate(template_path)
-
   image_context = {}
   temp_files = []
 
@@ -69,14 +69,13 @@ def generate_report_from_template(nid, fname, lname, images):
     if img_file is not None:
       temp_path = f"temp_{key}.jpg"
       img = Image.open(img_file)
-
-      # **จุดที่แก้ไข:** แปลงภาพเป็น RGB ป้องกัน Error กรณีรูปเป็น RGBA หรือมี Alpha channel
       if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
-
       img.save(temp_path, "JPEG")
       temp_files.append(temp_path)
-      image_context[key] = InlineImage(doc, temp_path, width=Inches(2.0))
+
+      # กำหนดความสูงรูปภาพเท่ากับ 10 เซนติเมตร
+      image_context[key] = InlineImage(doc, temp_path, height=Cm(10))
     else:
       image_context[key] = ""
 
@@ -88,14 +87,29 @@ def generate_report_from_template(nid, fname, lname, images):
 
   doc.render(context)
 
-  output_filename = f"ภาพแนบ-{nid}-{fname} {lname}.docx"
-  doc.save(output_filename)
+  base_name = f"ภาพแนบ-{nid}-{fname} {lname}"
+  docx_filename = f"{base_name}.docx"
+  pdf_filename = f"{base_name}.pdf"
 
+  # บันทึกไฟล์ Word
+  doc.save(docx_filename)
+
+  # แปลง Word เป็น PDF ผ่าน LibreOffice
+  try:
+    subprocess.run(
+        ["libreoffice", "--headless", "--convert-to", "pdf", docx_filename],
+        check=True,
+    )
+  except Exception as e:
+    st.error(f"เกิดข้อผิดพลาดในการแปลงไฟล์เป็น PDF: {e}")
+    return docx_filename, None
+
+  # ลบไฟล์ภาพชั่วคราว
   for tf in temp_files:
     if os.path.exists(tf):
       os.remove(tf)
 
-  return output_filename
+  return docx_filename, pdf_filename
 
 
 # ส่วนที่ 3: ปุ่มบันทึกและดาวน์โหลด
@@ -103,18 +117,33 @@ if st.button("บันทึกข้อมูลและสร้างไฟ
   if not national_id or not first_name or not last_name:
     st.error("กรุณากรอกข้อมูล ชื่อ นามสกุล และเลขประจำตัวประชาชนให้ครบถ้วน")
   else:
-    with st.spinner("กำลังประมวลผลข้อมูล..."):
-      output_file = generate_report_from_template(
+    with st.spinner("กำลังประมวลผลข้อมูล สร้างเอกสาร Word และแปลงเป็น PDF..."):
+      docx_file, pdf_file = generate_files_word_and_pdf(
           national_id, first_name, last_name, captured_images
       )
 
-      if output_file:
-        st.success("สร้างเอกสารสำเร็จ")
+      if docx_file:
+        st.success("สร้างไฟล์รายงานสำเร็จเรียบร้อยแล้ว")
+        st.markdown("---")
 
-        with open(output_file, "rb") as f:
-          st.download_button(
-              label="ดาวน์โหลดไฟล์ Word (.docx)",
-              data=f,
-              file_name=output_file,
-              mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-          )
+        # แสดงปุ่มดาวน์โหลดแยก 2 ไฟล์
+        col_btn1, col_btn2 = st.columns(2)
+
+        with col_btn1:
+          with open(docx_file, "rb") as f:
+            st.download_button(
+                label="📥 ดาวน์โหลดไฟล์ Word (.docx)",
+                data=f,
+                file_name=docx_file,
+                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+
+        if pdf_file and os.path.exists(pdf_file):
+          with col_btn2:
+            with open(pdf_file, "rb") as f:
+              st.download_button(
+                  label="📥 ดาวน์โหลดไฟล์ PDF (.pdf)",
+                  data=f,
+                  file_name=pdf_file,
+                  mime="application/pdf",
+              )
