@@ -76,7 +76,7 @@ def generate_files_word_and_pdf(nid, name, images):
       temp_files.append(temp_path)
 
       # กำหนดความสูงรูปภาพเท่ากับ 6 เซนติเมตร
-      image_context[key] = InlineImage(doc, temp_path, height=Cm(6))
+      image_context[key] = InlineImage(doc, temp_path, height=Cm(8))
     else:
       image_context[key] = ""
 
