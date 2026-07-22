@@ -3,7 +3,7 @@ import subprocess
 import streamlit as st
 from docx.shared import Cm
 from docxtpl import DocxTemplate, InlineImage
-from PIL import Image
+from PIL import Image, ImageOps
 
 st.set_page_config(
     page_title="ระบบบันทึกภาพและจัดทำแฟ้มผู้ต้องหา", page_icon="📋", layout="centered"
@@ -69,13 +69,17 @@ def generate_files_word_and_pdf(nid, fname, lname, images):
     if img_file is not None:
       temp_path = f"temp_{key}.jpg"
       img = Image.open(img_file)
+
+      # แก้ไขปัญหาภาพตะแคงด้วยการอ่านค่า EXIF Orientation และปรับแนวตั้งอัตโนมัติ
+      img = ImageOps.exif_transpose(img)
+
       if img.mode in ("RGBA", "P"):
         img = img.convert("RGB")
       img.save(temp_path, "JPEG")
       temp_files.append(temp_path)
 
-      # กำหนดความสูงรูปภาพเท่ากับ 10 เซนติเมตร
-      image_context[key] = InlineImage(doc, temp_path, height=Cm(10))
+      # กำหนดความสูงรูปภาพเท่ากับ 6 เซนติเมตร
+      image_context[key] = InlineImage(doc, temp_path, height=Cm(6))
     else:
       image_context[key] = ""
 
@@ -117,7 +121,9 @@ if st.button("บันทึกข้อมูลและสร้างไฟ
   if not national_id or not first_name or not last_name:
     st.error("กรุณากรอกข้อมูล ชื่อ นามสกุล และเลขประจำตัวประชาชนให้ครบถ้วน")
   else:
-    with st.spinner("กำลังประมวลผลข้อมูล สร้างเอกสาร Word และแปลงเป็น PDF..."):
+    with st.spinner(
+        "กำลังประมวลผลข้อมูล ปรับทิศทางภาพ จัดวาง และแปลงไฟล์..."
+    ):
       docx_file, pdf_file = generate_files_word_and_pdf(
           national_id, first_name, last_name, captured_images
       )
@@ -126,7 +132,6 @@ if st.button("บันทึกข้อมูลและสร้างไฟ
         st.success("สร้างไฟล์รายงานสำเร็จเรียบร้อยแล้ว")
         st.markdown("---")
 
-        # แสดงปุ่มดาวน์โหลดแยก 2 ไฟล์
         col_btn1, col_btn2 = st.columns(2)
 
         with col_btn1:
