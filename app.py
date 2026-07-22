@@ -1,18 +1,17 @@
 import os
 import streamlit as st
-from docx import Document
 from docx.shared import Inches
+from docxtpl import DocxTemplate, InlineImage
 from PIL import Image
 
-# กำหนดค่าหน้าจอ Streamlit
 st.set_page_config(
     page_title="ระบบบันทึกภาพและจัดทำแฟ้มผู้ต้องหา", page_icon="📋", layout="centered"
 )
 
-st.title("ระบบบันทึกภาพและข้อมูลผู้ต้องหา")
+st.title("ระบบจัดทำบันทึกแนบท้ายภาพถ่ายผู้ถูกจับและผู้ถูกควบคุม")
 st.markdown("---")
 
-# ส่วนที่ 1: การกรอกข้อมูลส่วนบุคคล
+# ส่วนที่ 1: ข้อมูลผู้ต้องหา
 st.subheader("1. ข้อมูลผู้ต้องหา")
 col1, col2 = st.columns(2)
 with col1:
@@ -25,98 +24,93 @@ with col2:
 
 st.markdown("---")
 
-# ส่วนที่ 2: การบันทึกภาพ 4 ด้าน (ถ่ายภาพจากกล้อง หรือ อัปโหลดไฟล์)
+# ส่วนที่ 2: บันทึกภาพถ่าย 4 ด้าน (บน 2 / ล่าง 2)
 st.subheader("2. บันทึกภาพถ่าย 4 ด้าน")
-
 angles = {
-    "front": "ภาพหน้าตรง",
-    "left": "ภาพด้านซ้าย",
-    "right": "ภาพด้านขวา",
-    "back": "ภาพด้านหลัง",
+    "pic_front": "ภาพหน้าตรง (pic_front)",
+    "pic_left": "ภาพด้านซ้าย (pic_left)",
+    "pic_right": "ภาพด้านขวา (pic_right)",
+    "pic_back": "ภาพด้านหลัง (pic_back)",
 }
 
 captured_images = {}
-
 for key, label in angles.items():
   st.markdown(f"**{label}**")
   input_method = st.radio(
-      f"เลือกวิธีนำเข้าสำหรับ{label}",
+      f"วิธีนำเข้า {key}",
       ("ถ่ายภาพจากกล้อง", "อัปโหลดไฟล์ภาพ"),
       key=f"method_{key}",
       horizontal=True,
   )
-
   if input_method == "ถ่ายภาพจากกล้อง":
-    img_file = st.camera_input(f"ถ่าย{label}", key=f"cam_{key}")
+    img_file = st.camera_input(f"ถ่าย {key}", key=f"cam_{key}")
   else:
     img_file = st.file_uploader(
-        f"เลือกไฟล์ภาพ{label}", type=["jpg", "jpeg", "png"], key=f"file_{key}"
+        f"เลือกไฟล์ {key}", type=["jpg", "jpeg", "png"], key=f"file_{key}"
     )
 
-  if img_file is not None:
-    captured_images[key] = Image.open(img_file)
-  else:
-    captured_images[key] = None
-
+  captured_images[key] = img_file
   st.markdown("---")
 
 
-# ฟังก์ชันสร้างเอกสาร Word
-def generate_docx(nid, fname, lname, images):
-  doc = Document()
-  doc.add_heading("บันทึกข้อมูลและภาพถ่ายผู้ต้องหา", 0)
+# ฟังก์ชันสร้างเอกสารผ่าน Template
+def generate_report_from_template(nid, fname, lname, images):
+  template_path = "template.docx"
+  if not os.path.exists(template_path):
+    st.error("ไม่พบไฟล์ template.docx ในระบบ กรุณาอัปโหลดไฟล์ Template")
+    return None
 
-  doc.add_paragraph(f"ชื่อ-นามสกุล: {fname} {lname}")
-  doc.add_paragraph(f"เลขประจำตัวประชาชน: {nid}")
-  doc.add_paragraph("ภาพถ่าย 4 ด้าน:")
+  doc = DocxTemplate(template_path)
 
-  # แทรกรูปภาพลงในเอกสาร
-  label_map = {
-      "front": "ภาพหน้าตรง",
-      "left": "ภาพด้านซ้าย",
-      "right": "ภาพด้านขวา",
-      "back": "ภาพด้านหลัง",
+  image_context = {}
+  temp_files = []
+
+  for key, img_file in images.items():
+    if img_file is not None:
+      temp_path = f"temp_{key}.jpg"
+      img = Image.open(img_file)
+      img.save(temp_path)
+      temp_files.append(temp_path)
+      image_context[key] = InlineImage(doc, temp_path, width=Inches(2.0))
+    else:
+      image_context[key] = ""
+
+  # กำหนดค่าตัวแปรตาม Template
+  context = {
+      "suspect_name": f"{fname} {lname}",
+      "suspect_id": nid,
+      **image_context,
   }
 
-  for k, img in images.items():
-    if img is not None:
-      temp_path = f"temp_{k}.jpg"
-      img.save(temp_path)
-      doc.add_paragraph(label_map[k])
-      doc.add_picture(temp_path, width=Inches(3.0))
-      if os.path.exists(temp_path):
-        os.remove(temp_path)
+  doc.render(context)
 
-  filename = f"ภาพแนบ-{nid}-{fname} {lname}.docx"
-  doc.save(filename)
-  return filename
+  output_filename = f"ภาพแนบ-{nid}-{fname} {lname}.docx"
+  doc.save(output_filename)
+
+  for tf in temp_files:
+    if os.path.exists(tf):
+      os.remove(tf)
+
+  return output_filename
 
 
 # ส่วนที่ 3: ปุ่มบันทึกและดาวน์โหลด
 if st.button("บันทึกข้อมูลและสร้างไฟล์รายงาน", type="primary"):
   if not national_id or not first_name or not last_name:
     st.error("กรุณากรอกข้อมูล ชื่อ นามสกุล และเลขประจำตัวประชาชนให้ครบถ้วน")
-  elif len(captured_images) == 0:
-    st.error("กรุณานำเข้าภาพถ่ายอย่างน้อย 1 ด้าน")
   else:
-    with st.spinner("กำลังประมวลผลและสร้างไฟล์เอกสาร..."):
-      # สร้างไฟล์ Word
-      docx_filename = generate_docx(
+    with st.spinner("กำลังประมวลผลข้อมูล..."):
+      output_file = generate_report_from_template(
           national_id, first_name, last_name, captured_images
       )
 
-      st.success("สร้างเอกสารสำเร็จ")
+      if output_file:
+        st.success("สร้างเอกสารสำเร็จ")
 
-      # แสดงปุ่มดาวน์โหลดไฟล์ Word
-      with open(docx_filename, "rb") as f:
-        st.download_button(
-            label="ดาวน์โหลดไฟล์ Word (.docx)",
-            data=f,
-            file_name=docx_filename,
-            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        )
-
-      # หมายเหตุเรื่อง PDF (กรณีรันบน Cloud แนะนำให้ใช้เครื่องมือแปลงไฟล์เพิ่มเติมหรือดาวน์โหลด Word ไปพิมพ์ตรง)
-      st.info(
-          "หมายเหตุ: สามารถเปิดไฟล์ Word ที่ดาวน์โหลดเพื่อตรวจสอบหน้ากระดาษและสั่งพิมพ์หรือแปลงเป็น PDF ได้ทันที"
-      )
+        with open(output_file, "rb") as f:
+          st.download_button(
+              label="ดาวน์โหลดไฟล์ Word (.docx)",
+              data=f,
+              file_name=output_file,
+              mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+          )
