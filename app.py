@@ -53,7 +53,7 @@ for key, label in angles.items():
   st.markdown("---")
 
 
-# ฟังก์ชันสร้างเอกสารผ่าน Template
+# ฟังก์ชันสร้างเอกสารผ่าน Template (แก้ไขจุดแปลงโหมดภาพ RGB ป้องกัน OSError)
 def generate_report_from_template(nid, fname, lname, images):
   template_path = "template.docx"
   if not os.path.exists(template_path):
@@ -69,13 +69,17 @@ def generate_report_from_template(nid, fname, lname, images):
     if img_file is not None:
       temp_path = f"temp_{key}.jpg"
       img = Image.open(img_file)
-      img.save(temp_path)
+
+      # **จุดที่แก้ไข:** แปลงภาพเป็น RGB ป้องกัน Error กรณีรูปเป็น RGBA หรือมี Alpha channel
+      if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+
+      img.save(temp_path, "JPEG")
       temp_files.append(temp_path)
       image_context[key] = InlineImage(doc, temp_path, width=Inches(2.0))
     else:
       image_context[key] = ""
 
-  # กำหนดค่าตัวแปรตาม Template
   context = {
       "suspect_name": f"{fname} {lname}",
       "suspect_id": nid,
