@@ -12,16 +12,15 @@ st.set_page_config(
 st.title("ระบบจัดทำบันทึกแนบท้ายภาพถ่ายผู้ถูกจับและผู้ถูกควบคุม")
 st.markdown("---")
 
-# ส่วนที่ 1: ข้อมูลผู้ต้องหา
+# ส่วนที่ 1: ข้อมูลผู้ต้องหา (รวมชื่อ-นามสกุลในช่องเดียว)
 st.subheader("1. ข้อมูลผู้ต้องหา")
 col1, col2 = st.columns(2)
 with col1:
-  first_name = st.text_input("ชื่อ")
+  full_name = st.text_input("ชื่อ - นามสกุล").strip()
+with col2:
   national_id = st.text_input(
       "เลขประจำตัวประชาชน (13 หลัก)", max_chars=13
   ).strip()
-with col2:
-  last_name = st.text_input("นามสกุล")
 
 st.markdown("---")
 
@@ -55,7 +54,7 @@ for key, label in angles.items():
 
 
 # ฟังก์ชันสร้างไฟล์ Word และแปลงเป็น PDF
-def generate_files_word_and_pdf(nid, fname, lname, images):
+def generate_files_word_and_pdf(nid, name, images):
   template_path = "template.docx"
   if not os.path.exists(template_path):
     st.error("ไม่พบไฟล์ template.docx ในระบบ กรุณาอัปโหลดไฟล์ Template")
@@ -69,8 +68,6 @@ def generate_files_word_and_pdf(nid, fname, lname, images):
     if img_file is not None:
       temp_path = f"temp_{key}.jpg"
       img = Image.open(img_file)
-
-      # แก้ไขปัญหาภาพตะแคงด้วยการอ่านค่า EXIF Orientation และปรับแนวตั้งอัตโนมัติ
       img = ImageOps.exif_transpose(img)
 
       if img.mode in ("RGBA", "P"):
@@ -79,26 +76,20 @@ def generate_files_word_and_pdf(nid, fname, lname, images):
       temp_files.append(temp_path)
 
       # กำหนดความสูงรูปภาพเท่ากับ 6 เซนติเมตร
-      image_context[key] = InlineImage(doc, temp_path, height=Cm(8))
+      image_context[key] = InlineImage(doc, temp_path, height=Cm(6))
     else:
       image_context[key] = ""
 
-  context = {
-      "suspect_name": f"{fname} {lname}",
-      "suspect_id": nid,
-      **image_context,
-  }
+  context = {"suspect_name": name, "suspect_id": nid, **image_context}
 
   doc.render(context)
 
-  base_name = f"ภาพแนบ-{nid}-{fname} {lname}"
+  base_name = f"ภาพแนบ-{nid}-{name}"
   docx_filename = f"{base_name}.docx"
   pdf_filename = f"{base_name}.pdf"
 
-  # บันทึกไฟล์ Word
   doc.save(docx_filename)
 
-  # แปลง Word เป็น PDF ผ่าน LibreOffice
   try:
     subprocess.run(
         ["libreoffice", "--headless", "--convert-to", "pdf", docx_filename],
@@ -108,7 +99,6 @@ def generate_files_word_and_pdf(nid, fname, lname, images):
     st.error(f"เกิดข้อผิดพลาดในการแปลงไฟล์เป็น PDF: {e}")
     return docx_filename, None
 
-  # ลบไฟล์ภาพชั่วคราว
   for tf in temp_files:
     if os.path.exists(tf):
       os.remove(tf)
@@ -118,14 +108,14 @@ def generate_files_word_and_pdf(nid, fname, lname, images):
 
 # ส่วนที่ 3: ปุ่มบันทึกและดาวน์โหลด
 if st.button("บันทึกข้อมูลและสร้างไฟล์รายงาน", type="primary"):
-  if not national_id or not first_name or not last_name:
-    st.error("กรุณากรอกข้อมูล ชื่อ นามสกุล และเลขประจำตัวประชาชนให้ครบถ้วน")
+  if not national_id or not full_name:
+    st.error("กรุณากรอกข้อมูล ชื่อ-นามสกุล และเลขประจำตัวประชาชนให้ครบถ้วน")
   else:
     with st.spinner(
         "กำลังประมวลผลข้อมูล ปรับทิศทางภาพ จัดวาง และแปลงไฟล์..."
     ):
       docx_file, pdf_file = generate_files_word_and_pdf(
-          national_id, first_name, last_name, captured_images
+          national_id, full_name, captured_images
       )
 
       if docx_file:
